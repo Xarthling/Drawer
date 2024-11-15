@@ -10,7 +10,7 @@ import {
   Image,
 } from "react-native";
 import assessmentModules from "../data/assessmentModules.json";
-import Form from '../component/Form';
+import Form from '../component/form';
 
 export default function Module() {
   const [modules, setModules] = useState([]);

@@ -1,8 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, ScrollView, Image, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import assessmentUsers from "../data/assessmentUsers.json";
-import Form from '../component/Form';
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+  Image,
+  Alert,
+} from "react-native";
+import Form from "../component/form.js";
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -13,66 +21,97 @@ const Users = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const savedUsers = await AsyncStorage.getItem('users');
-        if (savedUsers) {
-          setUsers(JSON.parse(savedUsers));
-        } else {
-          await AsyncStorage.setItem('users', JSON.stringify(assessmentUsers));
-          setUsers(assessmentUsers);
-        }
+        const response = await fetch("http://192.168.18.24:3000/users");
+        const data = await response.json();
+        setUsers(data);
       } catch (error) {
-        console.error('Error loading users from AsyncStorage:', error);
+        console.error("Error loading users from server:", error);
       }
     };
     loadData();
   }, []);
 
-  // Save data to AsyncStorage
-  const saveUsers = async (updatedUsers) => {
+  const handleCreateOrUpdateUser = async (newUser) => {
+    const formattedUser = {
+      UserID: newUser.UserID,
+      UserFirstname: newUser.firstName || "Dummy",
+      UserLastname: newUser.lastName || "Dummy",
+      UserEmail: newUser.email || "Dummy",
+      UserImageURL: newUser.UserImageURL || "https://default-image-url.com",
+      UserType: newUser.userType || "Dummy",
+      UserYear: newUser.UserYear || "2023-24",
+    };
+
     try {
-      await AsyncStorage.setItem('users', JSON.stringify(updatedUsers));
-      setUsers(updatedUsers); // Ensure state is updated after saving
-    } catch (error) {
-      console.error('Error saving users to AsyncStorage:', error);
-    }
-  };
+      const response = editMode
+        ? await fetch(`http://192.168.18.24:3000/users/${currentUser.UserID}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(formattedUser),
+          })
+        : await fetch("http://192.168.18.24:3000/create-user", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(formattedUser),
+          });
 
-  // Handle create or update user
-  const handleCreateOrUpdateUser = (newUser) => {
-    let updatedUsers;
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const errorData = await response.json();
+          console.error("Server response:", errorData);
+        } else {
+          const errorText = await response.text();
+          console.error("Server response is not JSON:", errorText);
+        }
+        throw new Error("Failed to save user");
+      }
 
-    if (editMode && currentUser) {
-      updatedUsers = users.map(user => 
-        user.UserID === currentUser.UserID ? { ...user, ...newUser } : user
+      const updatedUser = await response.json();
+      setUsers((prevUsers) =>
+        editMode
+          ? prevUsers.map((user) =>
+              user.UserID === updatedUser.UserID ? updatedUser : user
+            )
+          : [...prevUsers, updatedUser]
       );
-    } else {
-      updatedUsers = [...users, { ...newUser, UserID: Date.now() }];
-    }
 
-    console.log("Updated Users:", updatedUsers); // Check if new user is added
-    saveUsers(updatedUsers);  // Save updated users to AsyncStorage
-    setModalVisible(false);
-    setEditMode(false);
-    setCurrentUser(null);
+      setModalVisible(false);
+      setEditMode(false);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error("Error saving user to server:", error);
+    }
   };
 
-  // Handle delete user
-  const handleDeleteUser = (userID) => {
+  const handleDeleteUser = async (userID) => {
     Alert.alert("Confirm Delete", "Are you sure you want to delete this user?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
-        onPress: () => {
-          const updatedUsers = users.filter(user => user.UserID !== userID);
-          setUsers(updatedUsers);
-          saveUsers(updatedUsers);  // Save updated users to AsyncStorage
+        onPress: async () => {
+          try {
+            const response = await fetch(`http://192.168.18.24:3000/users/${userID}`, {
+              method: "DELETE",
+            });
+            if (response.ok) {
+              setUsers(users.filter((user) => user.UserID !== userID));
+            } else {
+              throw new Error("Failed to delete user");
+            }
+          } catch (error) {
+            console.error("Error deleting user:", error);
+          }
         },
         style: "destructive",
       },
     ]);
   };
 
-  // Open edit modal
   const openEditModal = (user) => {
     setCurrentUser(user);
     setEditMode(true);
@@ -95,46 +134,36 @@ const Users = () => {
       <ScrollView style={styles.scroll}>
         {users.map((user) => (
           <View key={user.UserID} style={styles.userCard}>
-            <Image source={{ uri: user.UserImageURL }} style={styles.userImage} />
+            <Image
+              source={{ uri: user.UserImageURL }}
+              style={styles.userImage}
+            />
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user.UserFirstname} {user.UserLastname}</Text>
               <Text style={styles.userEmail}>{user.UserEmail}</Text>
               <Text style={styles.userType}>{user.UserType}</Text>
             </View>
-            <TouchableOpacity onPress={() => openEditModal(user)} style={styles.editButton}>
-              <Text style={styles.btnText}>Edit</Text>
+            <TouchableOpacity
+              onPress={() => openEditModal(user)}
+              style={styles.editButton}
+            >
+              <Text>Edit</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDeleteUser(user.UserID)} style={styles.deleteButton}>
-              <Text style={styles.btnText}>Delete</Text>
+            <TouchableOpacity
+              onPress={() => handleDeleteUser(user.UserID)}
+              style={styles.deleteButton}
+            >
+              <Text>Delete</Text>
             </TouchableOpacity>
           </View>
         ))}
       </ScrollView>
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(!modalVisible);
-        }}
-      >
-        <View style={styles.modalView}>
-          <Form
-            initialData={currentUser}
-            onSubmit={handleCreateOrUpdateUser}
-            closeModal={() => setModalVisible(false)}
-          />
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => {
-              setModalVisible(false);
-              setEditMode(false);
-              setCurrentUser(null);
-            }}
-          >
-            <Text style={styles.textStyle}>Close</Text>
-          </TouchableOpacity>
-        </View>
+      <Modal visible={modalVisible} animationType="slide">
+        <Form
+          onSubmit={handleCreateOrUpdateUser}
+          initialData={currentUser}
+          closeModal={() => setModalVisible(false)}
+        />
       </Modal>
     </SafeAreaView>
   );
@@ -205,32 +234,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "grey",
   },
-  modalView: {
-    margin: 20,
-    backgroundColor: "white",
-    borderRadius: 5,
-    padding: 35,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  closeButton: {
-    backgroundColor: "#dd404ee0",
-    borderRadius: 5,
-    padding: 10,
-    elevation: 2,
-  },
-  textStyle: {
-    color: "white",
-    fontWeight: "bold",
-    textAlign: "center",
-  },
   editButton: {
     padding: 5,
     backgroundColor: "#007bff",
@@ -238,12 +241,6 @@ const styles = StyleSheet.create({
     marginRight: 5,
     justifyContent: "center",
     alignItems: "center",
-  },
-  btnText: {
-    color: "white",
-    fontWeight: "bold",
-    textAlign: "center",
-    fontSize: 10
   },
   deleteButton: {
     padding: 5,
